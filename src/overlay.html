@@ -1,0 +1,104 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: transparent; overflow: hidden;
+    font: 500 13px/1.2 -apple-system, "Segoe UI", system-ui, sans-serif; user-select: none; }
+  .wrap { height: 100%; display: flex; align-items: center; justify-content: center; }
+  .pill { display: flex; align-items: center; gap: 14px; height: 48px; padding: 0 20px;
+    border-radius: 24px; background: rgba(24, 26, 31, .94); color: #eceff4;
+    box-shadow: 0 8px 28px rgba(0,0,0,.35), inset 0 0 0 1px rgba(255,255,255,.08);
+    transform: scale(.92); opacity: 0; transition: transform .16s ease, opacity .16s ease; }
+  .pill.on { transform: scale(1); opacity: 1; }
+  canvas { width: 96px; height: 28px; display: block; }
+  .label { white-space: nowrap; color: #c3c9d4; }
+  .dots { display: none; gap: 5px; }
+  .dots i { width: 6px; height: 6px; border-radius: 50%; background: #7fd6b0; animation: bob 1s infinite ease-in-out; }
+  .dots i:nth-child(2) { animation-delay: .15s; } .dots i:nth-child(3) { animation-delay: .3s; }
+  @keyframes bob { 0%, 80%, 100% { opacity: .25; transform: translateY(0); } 40% { opacity: 1; transform: translateY(-3px); } }
+  .pill.transcribing canvas, .pill.loading canvas, .pill.error canvas, .pill.done canvas { display: none; }
+  .pill.transcribing .dots, .pill.loading .dots { display: flex; }
+  .pill.error .label { color: #f2a3a3; }
+  @media (prefers-reduced-motion: reduce) { .pill, .dots i { transition: none; animation: none; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="pill" id="pill">
+    <canvas id="wave" width="192" height="56"></canvas>
+    <div class="dots"><i></i><i></i><i></i></div>
+    <div class="label" id="label">Listening</div>
+  </div>
+</div>
+<script>
+const pill = document.getElementById('pill');
+const label = document.getElementById('label');
+const canvas = document.getElementById('wave');
+const g = canvas.getContext('2d');
+
+let stream, ctx, src, proc, analyser, chunks = [], raf, startPromise = null, aborted = false;
+
+function setMode(mode, text) {
+  pill.className = 'pill on ' + mode;
+  label.textContent = text || ({ recording: 'Listening', transcribing: 'Writing it down', done: 'Inserted', loading: 'Loading', error: 'Error' }[mode]);
+}
+
+function draw() {
+  const data = new Uint8Array(analyser.frequencyBinCount);
+  analyser.getByteTimeDomainData(data);
+  const bars = 16, w = canvas.width / bars;
+  g.clearRect(0, 0, canvas.width, canvas.height);
+  g.fillStyle = '#7fd6b0';
+  for (let i = 0; i < bars; i++) {
+    let peak = 0;
+    const from = Math.floor(i * data.length / bars), to = Math.floor((i + 1) * data.length / bars);
+    for (let j = from; j < to; j++) peak = Math.max(peak, Math.abs(data[j] - 128));
+    const h = Math.max(6, Math.min(canvas.height, (peak / 128) * canvas.height * 2.4));
+    const x = i * w + 3, y = (canvas.height - h) / 2;
+    g.beginPath(); g.roundRect(x, y, w - 6, h, 4); g.fill();
+  }
+  raf = requestAnimationFrame(draw);
+}
+
+async function begin() {
+  aborted = false; chunks = [];
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, echoCancellation: false, noiseSuppression: true } });
+  } catch (e) { window.murmur.micError(String(e.message || e)); return; }
+  if (aborted) { stream.getTracks().forEach(t => t.stop()); return; }
+  ctx = new AudioContext({ sampleRate: 16000 });   // Whisper expects 16 kHz mono
+  src = ctx.createMediaStreamSource(stream);
+  analyser = ctx.createAnalyser(); analyser.fftSize = 512;
+  proc = ctx.createScriptProcessor(4096, 1, 1);
+  proc.onaudioprocess = (e) => chunks.push(new Float32Array(e.inputBuffer.getChannelData(0)));
+  src.connect(analyser); src.connect(proc); proc.connect(ctx.destination);
+  draw();
+}
+
+async function teardown() {
+  cancelAnimationFrame(raf);
+  try { proc && proc.disconnect(); src && src.disconnect(); } catch {}
+  stream && stream.getTracks().forEach(t => t.stop());
+  if (ctx && ctx.state !== 'closed') await ctx.close();
+  stream = ctx = src = proc = analyser = null;
+}
+
+async function end() {
+  if (startPromise) await startPromise;
+  const got = chunks; chunks = [];
+  await teardown();
+  const total = got.reduce((n, c) => n + c.length, 0);
+  const out = new Float32Array(total);
+  let o = 0; for (const c of got) { out.set(c, o); o += c.length; }
+  window.murmur.sendAudio(out);
+}
+
+window.murmur.onStart(() => { setMode('recording'); startPromise = begin(); });
+window.murmur.onStop(() => { end(); });
+window.murmur.onCancel(async () => { aborted = true; if (startPromise) await startPromise; chunks = []; await teardown(); pill.className = 'pill'; });
+window.murmur.onState((s) => setMode(s.mode, s.text));
+</script>
+</body>
+</html>

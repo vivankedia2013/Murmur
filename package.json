@@ -1,0 +1,73 @@
+{
+  "name": "murmur",
+  "version": "1.0.0",
+  "description": "Hold a key, speak, and your words are typed into whatever app you're using. Fully local, no API key.",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder"
+  },
+  "dependencies": {
+    "@huggingface/transformers": "^3.0.0",
+    "uiohook-napi": "^1.5.4"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.murmur.dictation",
+    "productName": "Murmur",
+    "files": [
+      "src/**/*",
+      "assets/**/*",
+      "package.json",
+      "!node_modules/onnxruntime-web/**"
+    ],
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg"
+      ],
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "Murmur listens while you hold the hotkey so it can turn your speech into text.",
+        "LSUIElement": true
+      },
+      "icon": "assets/icon.png",
+      "minimumSystemVersion": "11.0",
+      "files": [
+        "!**/node_modules/onnxruntime-node/bin/napi-v3/{linux,win32}/**"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "assets/icon.png",
+      "files": [
+        "!**/node_modules/onnxruntime-node/bin/napi-v3/{linux,darwin}/**"
+      ]
+    },
+    "directories": {
+      "output": "dist"
+    },
+    "asar": false,
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "npmRebuild": false
+  },
+  "author": "vivankedia2013",
+  "license": "MIT",
+  "homepage": "https://github.com/vivankedia2013/Murmur",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vivankedia2013/Murmur.git"
+  },
+  "keywords": [
+    "dictation",
+    "speech-to-text",
+    "whisper",
+    "offline",
+    "voice-typing",
+    "electron"
+  ]
+}

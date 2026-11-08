@@ -1,0 +1,48 @@
+name: Build and release Murmur
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: windows-x64, os: windows-latest, args: '--win --x64' }
+          - { name: mac-arm64,   os: macos-15,       args: '--mac --arm64' }
+          - { name: mac-intel,   os: macos-15-intel, args: '--mac --x64' }
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - run: npm install
+      - run: npx electron-builder ${{ matrix.args }} --publish never
+      - uses: actions/upload-artifact@v4
+        with:
+          name: murmur-${{ matrix.name }}
+          path: |
+            dist/*.exe
+            dist/*.dmg
+          if-no-files-found: error
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: Murmur ${{ github.ref_name }}
+          body: |
+            Hold a key, speak, and your words are typed into any app. Fully local, no API key.
+            **Windows 10/11:** Murmur-*-win-x64.exe
+            **macOS 11+ Apple Silicon (M1/M2/M3/M4):** Murmur-*-mac-arm64.dmg
+            **macOS 11+ Intel:** Murmur-*-mac-x64.dmg
+          files: artifacts/*
